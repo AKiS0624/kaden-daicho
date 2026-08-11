@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>家電管理台帳</title>
+<meta name="description" content="家に番号を振って家電を登録・検索・廃棄管理するアプリ" />
+<meta name="theme-color" content="#1F2421" />
+<link rel="manifest" href="./manifest.json" />
+<link rel="icon" href="./icon-192.png" />
+<link rel="apple-touch-icon" href="./icon-192.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
+<style>
+  body { font-family: 'IBM Plex Sans JP', system-ui, sans-serif; background:#EDEDE8; color:#1F2421; }
+  .font-mono-plate { font-family: 'IBM Plex Mono', monospace; }
+  .plate-texture { background-image: linear-gradient(90deg, rgba(0,0,0,0.02) 1px, transparent 1px); background-size: 6px 100%; }
+  .input {
+    width: 100%; background: white; border: 1px solid #D8D8D0; border-radius: 0.5rem;
+    padding: 0.6rem 0.75rem; font-size: 0.875rem; outline: none;
+  }
+  .input:focus { border-color: #F2A900; box-shadow: 0 0 0 3px rgba(242,169,0,0.25); }
+</style>
+</head>
+<body class="min-h-screen">
+
+<div class="max-w-2xl mx-auto px-4 pb-28">
+  <!-- Header -->
+  <header class="pt-8 pb-6">
+    <div class="flex items-center gap-2 text-[#6B7280] font-mono-plate text-xs tracking-widest uppercase mb-1">
+      <i data-lucide="clipboard-list" style="width:14px;height:14px"></i>
+      Home Appliance Registry
+    </div>
+    <h1 class="text-3xl font-bold tracking-tight">家電管理台帳</h1>
+    <div class="mt-3 flex gap-3 font-mono-plate text-xs text-[#6B7280]">
+      <span class="inline-flex items-center gap-1 bg-white border border-[#D8D8D0] rounded px-2 py-1">
+        使用中 <b id="activeCount" class="text-[#1F2421]">0</b>
+      </span>
+      <span class="inline-flex items-center gap-1 bg-white border border-[#D8D8D0] rounded px-2 py-1">
+        廃棄済 <b id="disposedCount" class="text-[#1F2421]">0</b>
+      </span>
+    </div>
+    <div class="mt-3 flex gap-2">
+      <button id="exportBtn" class="inline-flex items-center gap-1.5 text-xs font-medium bg-white border border-[#D8D8D0] rounded-lg px-3 py-1.5 active:scale-95 transition">
+        <i data-lucide="download" style="width:13px;height:13px"></i> バックアップを書き出す
+      </button>
+      <button id="importBtn" class="inline-flex items-center gap-1.5 text-xs font-medium bg-white border border-[#D8D8D0] rounded-lg px-3 py-1.5 active:scale-95 transition">
+        <i data-lucide="upload" style="width:13px;height:13px"></i> 復元する
+      </button>
+      <input id="importFile" type="file" accept="application/json,.json" class="hidden" />
+    </div>
+    <div id="importError" class="hidden mt-2 text-xs text-[#B54834] bg-[#B54834]/10 border border-[#B54834]/30 rounded-lg px-3 py-2"></div>
+  </header>
+
+  <!-- Search + filters -->
+  <div class="space-y-2 mb-5">
+    <div class="flex gap-2">
+      <div class="relative flex-1">
+        <i data-lucide="search" style="width:16px;height:16px" class="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B7280]"></i>
+        <input id="searchInput" placeholder="番号・品名・型番・設置場所などで検索"
+          class="w-full bg-white border border-[#D8D8D0] rounded-lg pl-9 pr-3 py-2.5 text-sm outline-none focus:border-[#F2A900] focus:ring-2 focus:ring-[#F2A900]/30" />
+      </div>
+      <button id="openScannerBtn" class="shrink-0 w-11 h-11 flex items-center justify-center bg-[#1F2421] text-white rounded-lg active:scale-95 transition" aria-label="QRコードで検索">
+        <i data-lucide="camera" style="width:18px;height:18px"></i>
+      </button>
+    </div>
+    <div class="flex gap-2 overflow-x-auto pb-1" id="statusFilters">
+      <button data-status="active" class="status-btn shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border">使用中</button>
+      <button data-status="disposed" class="status-btn shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border">廃棄済み</button>
+      <button data-status="all" class="status-btn shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border">すべて</button>
+      <div class="w-px bg-[#D8D8D0] mx-1 shrink-0"></div>
+      <select id="categoryFilter" class="shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border border-[#D8D8D0] bg-white text-[#6B7280]">
+        <option value="all">全カテゴリ</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="saveError" class="hidden mb-4 text-xs text-[#B54834] bg-[#B54834]/10 border border-[#B54834]/30 rounded-lg px-3 py-2"></div>
+
+  <!-- List -->
+  <div id="emptyState" class="hidden text-center py-16 border border-dashed border-[#D8D8D0] rounded-xl">
+    <i data-lucide="package" class="mx-auto mb-3 text-[#B8B8AE]" style="width:28px;height:28px"></i>
+    <p class="text-sm text-[#6B7280]" id="emptyMessage">まだ登録された家電がありません</p>
+  </div>
+  <ul id="itemList" class="space-y-2.5"></ul>
+</div>
+
+<!-- Floating add button -->
+<button id="openAddBtn" class="fixed bottom-6 right-6 bg-[#F2A900] text-[#1F2421] rounded-full w-14 h-14 shadow-lg flex items-center justify-center active:scale-95 transition z-10" aria-label="家電を登録">
+  <i data-lucide="plus" style="width:26px;height:26px"></i>
+</button>
+
+<!-- Add form modal -->
+<div id="addModal" class="fixed inset-0 bg-black/60 hidden items-end sm:items-center justify-center z-20">
+  <div class="bg-[#EDEDE8] w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl p-5 max-h-[90vh] overflow-y-auto shadow-2xl">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-bold text-lg">家電を登録</h2>
+      <button type="button" id="closeAddBtn" class="p-1 text-[#6B7280]"><i data-lucide="x" style="width:20px;height:20px"></i></button>
+    </div>
+    <div id="formError" class="hidden mb-3 text-xs text-[#B54834] bg-[#B54834]/10 border border-[#B54834]/30 rounded-lg px-3 py-2"></div>
+
+    <div class="mb-3">
+      <span class="block text-xs font-medium text-[#6B7280] mb-1">管理番号</span>
+      <div class="flex gap-2 mb-2">
+        <button type="button" id="numModeAuto" class="num-mode-btn flex-1 text-xs font-medium px-3 py-1.5 rounded-full border">連番</button>
+        <button type="button" id="numModeManual" class="num-mode-btn flex-1 text-xs font-medium px-3 py-1.5 rounded-full border">任意の番号</button>
+      </div>
+      <input type="number" inputmode="numeric" min="1" id="f_manualNumber" placeholder="例: 42" class="input hidden" />
+    </div>
+
+    <div class="space-y-3">
+      <label class="block">
+        <span class="block text-xs font-medium text-[#6B7280] mb-1">品名 *</span>
+        <input id="f_name" placeholder="例: 冷蔵庫" class="input" />
+      </label>
+      <label class="block">
+        <span class="block text-xs font-medium text-[#6B7280] mb-1">型番</span>
+        <input id="f_modelNumber" placeholder="例: NR-B17FW" class="input" />
+      </label>
+      <label class="block">
+        <span class="block text-xs font-medium text-[#6B7280] mb-1">カテゴリ</span>
+        <select id="f_category" class="input"></select>
+      </label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="block">
+          <span class="block text-xs font-medium text-[#6B7280] mb-1">購入日</span>
+          <input type="date" id="f_purchaseDate" class="input" />
+        </label>
+        <label class="block">
+          <span class="block text-xs font-medium text-[#6B7280] mb-1">価格(円)</span>
+          <input type="number" inputmode="numeric" id="f_price" placeholder="例: 98000" class="input" />
+        </label>
+      </div>
+      <label class="block">
+        <span class="block text-xs font-medium text-[#6B7280] mb-1">購入場所</span>
+        <input id="f_purchasePlace" placeholder="例: ヤマダ電機" class="input" />
+      </label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="block">
+          <span class="block text-xs font-medium text-[#6B7280] mb-1">設置場所</span>
+          <input id="f_location" placeholder="例: キッチン" class="input" />
+        </label>
+        <label class="block">
+          <span class="block text-xs font-medium text-[#6B7280] mb-1">保証期間(月)</span>
+          <input type="number" inputmode="numeric" id="f_warrantyMonths" placeholder="例: 12" class="input" />
+        </label>
+      </div>
+      <label class="block">
+        <span class="block text-xs font-medium text-[#6B7280] mb-1">メモ</span>
+        <textarea id="f_memo" rows="2" class="input resize-none"></textarea>
+      </label>
+    </div>
+    <button type="button" id="submitAddBtn" class="w-full mt-5 bg-[#1F2421] text-white font-semibold rounded-lg py-3 active:scale-[0.99] transition">登録する</button>
+  </div>
+</div>
+
+<!-- Detail modal -->
+<div id="detailModal" class="fixed inset-0 bg-black/60 hidden items-end sm:items-center justify-center z-20">
+  <div class="bg-[#EDEDE8] w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl p-5 max-h-[90vh] overflow-y-auto shadow-2xl">
+    <div class="flex items-center justify-between mb-3">
+      <span id="d_number" class="font-mono-plate text-[11px] font-bold text-white bg-[#1F2421] rounded px-1.5 py-0.5"></span>
+      <button id="closeDetailBtn" class="p-1 text-[#6B7280]"><i data-lucide="x" style="width:20px;height:20px"></i></button>
+    </div>
+    <h2 id="d_name" class="font-bold text-xl mb-3"></h2>
+    <dl class="text-sm divide-y divide-[#D8D8D0] border-y border-[#D8D8D0] mb-4" id="d_rows"></dl>
+    <div class="flex flex-col items-center gap-1.5 mb-4 py-3 border border-dashed border-[#D8D8D0] rounded-xl">
+      <img id="d_qrImg" width="140" height="140" class="rounded" alt="QRコード" />
+      <span class="inline-flex items-center gap-1 text-[11px] text-[#6B7280]">
+        <i data-lucide="qr-code" style="width:12px;height:12px"></i> 本体に貼ってスキャン検索に使えます
+      </span>
+    </div>
+    <div class="flex gap-2">
+      <button id="d_disposeBtn" class="flex-1 hidden inline-flex items-center justify-center gap-1.5 bg-[#B54834] text-white font-semibold rounded-lg py-2.5 text-sm active:scale-[0.99] transition">
+        <i data-lucide="archive" style="width:15px;height:15px"></i> 廃棄登録
+      </button>
+      <button id="d_restoreBtn" class="flex-1 hidden inline-flex items-center justify-center gap-1.5 bg-white border border-[#D8D8D0] font-semibold rounded-lg py-2.5 text-sm active:scale-[0.99] transition">
+        <i data-lucide="rotate-ccw" style="width:15px;height:15px"></i> 使用中に戻す
+      </button>
+      <button id="d_deleteBtn" class="inline-flex items-center justify-center gap-1.5 bg-white border border-[#D8D8D0] text-[#B54834] rounded-lg px-3.5 py-2.5 text-sm active:scale-[0.99] transition" aria-label="削除">
+        <i data-lucide="trash-2" style="width:15px;height:15px"></i>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Dispose confirm modal -->
+<div id="disposeModal" class="fixed inset-0 bg-black/60 hidden items-end sm:items-center justify-center z-30">
+  <div class="bg-[#EDEDE8] w-full sm:max-w-sm sm:rounded-2xl rounded-t-2xl p-5 shadow-2xl">
+    <h2 class="font-bold text-lg mb-3">廃棄登録</h2>
+    <label class="block">
+      <span class="block text-xs font-medium text-[#6B7280] mb-1">廃棄日</span>
+      <input type="date" id="disposalDateInput" class="input" />
+    </label>
+    <div class="flex gap-2 mt-4">
+      <button id="disposeCancelBtn" class="flex-1 bg-white border border-[#D8D8D0] rounded-lg py-2.5 text-sm font-semibold">キャンセル</button>
+      <button id="disposeConfirmBtn" class="flex-1 bg-[#B54834] text-white rounded-lg py-2.5 text-sm font-semibold">廃棄を確定</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import confirm modal -->
+<div id="importModal" class="fixed inset-0 bg-black/60 hidden items-end sm:items-center justify-center z-30">
+  <div class="bg-[#EDEDE8] w-full sm:max-w-sm sm:rounded-2xl rounded-t-2xl p-5 shadow-2xl">
+    <h2 class="font-bold text-lg mb-2">バックアップから復元</h2>
+    <p class="text-sm text-[#6B7280] mb-1" id="importCount"></p>
+    <p class="text-xs text-[#B54834] bg-[#B54834]/10 border border-[#B54834]/30 rounded-lg px-3 py-2 mb-4">復元すると、現在登録されているデータは上書きされます。</p>
+    <div class="flex gap-2">
+      <button id="importCancelBtn" class="flex-1 bg-white border border-[#D8D8D0] rounded-lg py-2.5 text-sm font-semibold">キャンセル</button>
+      <button id="importConfirmBtn" class="flex-1 bg-[#1F2421] text-white rounded-lg py-2.5 text-sm font-semibold">上書きして復元</button>
+    </div>
+  </div>
+</div>
+
+<!-- QR scanner modal -->
+<div id="scannerModal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-40 p-4">
+  <div class="bg-[#EDEDE8] w-full max-w-sm rounded-2xl p-4 shadow-2xl">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-bold text-lg flex items-center gap-1.5"><i data-lucide="qr-code" style="width:18px;height:18px"></i> QRコードで検索</h2>
+      <button id="closeScannerBtn" class="p-1 text-[#6B7280]"><i data-lucide="x" style="width:20px;height:20px"></i></button>
+    </div>
+    <div id="scannerVideoWrap" class="relative bg-black rounded-lg overflow-hidden aspect-square">
+      <video id="scannerVideo" muted playsinline class="w-full h-full object-cover"></video>
+      <div class="absolute inset-8 border-2 border-[#F2A900] rounded-lg pointer-events-none"></div>
+    </div>
+    <div id="scannerUnsupported" class="hidden text-center py-10 text-sm text-[#6B7280]">お使いのブラウザはQRスキャンに対応していません。</div>
+    <div id="scanMessage" class="hidden mt-3 text-xs text-[#B54834] bg-[#B54834]/10 border border-[#B54834]/30 rounded-lg px-3 py-2"></div>
+    <p class="mt-3 text-xs text-[#6B7280] text-center">家電に貼ったQRコードをカメラに映してください</p>
+  </div>
+</div>
+
+<script src="./app.js"></script>
+</body>
+</html>
